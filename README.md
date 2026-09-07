@@ -2,7 +2,7 @@
 
 Personal macOS config. This repo *is* `~/.config`.
 
-## New machine
+## Set Up
 
 Delete any existing `~/.config` first, then:
 
