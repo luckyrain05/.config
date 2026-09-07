@@ -1,0 +1,9 @@
+.DS_Store
+stripe/
+
+# Credentials — never commit (repo is public)
+gh/hosts.yml
+github-copilot/
+
+# Editor swap files
+*.swp

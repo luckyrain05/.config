@@ -1,0 +1,7 @@
+font-family = MesloLGS Nerd Font Mono
+font-size = 18
+background-opacity = 0.965
+background-blur = 20
+theme = old-world
+command = zsh -c "fastfetch; exec zsh"
+

@@ -1,0 +1,18 @@
+[mgr]
+show_hidden = true
+sort_dir_first = true
+
+[opener]
+default = [
+  { run = 'open "$@"', orphan = true, desc = "Open in Default App" }
+]
+edit = [
+  { run = "nvim %s", block = true, for = "unix" }
+]
+
+[open]
+rules = [
+  { url = "*.{py,js,ts,go,rs,c,cpp,h,sh,lua,json,yaml,yml,md,txt,toml}", use = "edit" },
+  { mime = "text/*", use = "edit" },
+  { mime = "*", use = "default" },
+]
