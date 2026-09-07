@@ -1,99 +1,47 @@
 #!/bin/sh
-#
-# Setup for a new machine. Run after cloning this repo to ~/.config:
-#
-#   sh ~/.config/install.sh
-#
-#   -n, --dry-run   show what would happen, change nothing
-#       --no-brew   skip package installation
-#
-# Safe to re-run: brew skips what is present, and the shell config is appended
-# only where missing.
 
 set -eu
 
-DRY_RUN=0
-DO_BREW=1
-
-while [ $# -gt 0 ]; do
-	case "$1" in
-		-n|--dry-run) DRY_RUN=1 ;;
-		--no-brew) DO_BREW=0 ;;
-		-h|--help) printf 'usage: sh install.sh [-n|--dry-run] [--no-brew]\n'; exit 0 ;;
-		*) printf 'install.sh: unknown option: %s\n' "$1" >&2; exit 2 ;;
-	esac
-	shift
-done
-
 say() { printf '\n\033[1m==> %s\033[0m\n' "$1"; }
-run() { if [ "$DRY_RUN" -eq 1 ]; then printf '   would run: %s\n' "$*"; else "$@"; fi; }
 
-# ---------------------------------------------------------------- packages ---
-
-BREW_TAPS='felixkratz/formulae nikitabobko/tap'
-
-BREW_FORMULAE='neovim tmux yazi fzf ripgrep fd zoxide gh git lazygit jq node
-tree-sitter-cli sevenzip poppler resvg imagemagick-full ffmpeg-full borders'
-
-BREW_CASKS='ghostty aerospace font-jetbrains-mono-nerd-font font-symbols-only-nerd-font'
-
-if command -v brew >/dev/null 2>&1; then
-	BREW_BIN=$(command -v brew)
-elif [ -x /opt/homebrew/bin/brew ]; then
-	BREW_BIN=/opt/homebrew/bin/brew
-elif [ -x /usr/local/bin/brew ]; then
-	BREW_BIN=/usr/local/bin/brew
-elif [ "$(uname -m)" = arm64 ]; then
-	BREW_BIN=/opt/homebrew/bin/brew
-else
-	BREW_BIN=/usr/local/bin/brew
+if ! command -v brew >/dev/null 2>&1; then
+  if [ -x /opt/homebrew/bin/brew ]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [ -x /usr/local/bin/brew ]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  else
+    say "Installing Homebrew"
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    if [ -x /opt/homebrew/bin/brew ]; then
+      eval "$(/opt/homebrew/bin/brew shellenv)"
+    else
+      eval "$(/usr/local/bin/brew shellenv)"
+    fi
+  fi
 fi
 
-brew_failed=0
+BREW=$(command -v brew)
 
-if [ "$DO_BREW" -eq 1 ]; then
-	if [ ! -x "$BREW_BIN" ]; then
-		say "Installing Homebrew"
-		if [ "$DRY_RUN" -eq 1 ]; then
-			printf '   would install Homebrew to %s\n' "$BREW_BIN"
-		else
-			/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-		fi
-	fi
+say "Tapping"
+brew tap felixkratz/formulae
+brew tap nikitabobko/tap
 
-	if [ -x "$BREW_BIN" ]; then
-		eval "$("$BREW_BIN" shellenv sh)" 2>/dev/null || eval "$("$BREW_BIN" shellenv)"
-	fi
+say "Installing command line tools"
+brew install neovim tmux yazi fzf ripgrep fd zoxide gh git lazygit jq node \
+  tree-sitter-cli sevenzip poppler resvg imagemagick-full ffmpeg-full borders
 
-	if [ -x "$BREW_BIN" ] || [ "$DRY_RUN" -eq 1 ]; then
-		say "Tapping"
-		for tap in $BREW_TAPS; do
-			run "$BREW_BIN" tap "$tap" || brew_failed=1
-		done
+say "Installing apps and fonts"
+brew install --cask ghostty aerospace font-jetbrains-mono-nerd-font \
+  font-symbols-only-nerd-font
 
-		say "Installing command line tools"
-		# shellcheck disable=SC2086
-		run "$BREW_BIN" install $BREW_FORMULAE || brew_failed=1
+say "Shell config"
 
-		say "Installing apps and fonts"
-		# shellcheck disable=SC2086
-		run "$BREW_BIN" install --cask $BREW_CASKS || brew_failed=1
-	else
-		printf 'install.sh: Homebrew not found at %s; skipping packages\n' "$BREW_BIN" >&2
-		brew_failed=1
-	fi
-fi
+ZSHRC="$HOME/.zshrc"
+ZPROFILE="$HOME/.zprofile"
+touch "$ZSHRC" "$ZPROFILE"
 
-# ----------------------------------------------------------- shell config ---
-#
-# ~/.zshrc and ~/.zprofile live outside ~/.config, so they are kept here.
-# Each fragment is split into blocks on blank lines and a block is appended
-# only if it is not already in the destination, so nothing gets duplicated.
-# Keep one blank line between independent statements; keep multi-line things
-# (a function, an if) in a single block.
+grep -q 'yazi-cwd' "$ZSHRC" || cat >>"$ZSHRC" <<'EOF'
 
-fragment_zshrc() {
-	cat <<'EOF'
 function y() {
 	local tmp cwd; tmp="$(mktemp -t "yazi-cwd.XXXXXX")"
 	command yazi "$@" --cwd-file="$tmp"
@@ -101,95 +49,13 @@ function y() {
 	[ "$cwd" != "$PWD" ] && [ -d "$cwd" ] && builtin cd -- "$cwd" || builtin true
 	command rm -f -- "$tmp"
 }
-
-export EDITOR=nvim
-
-export PATH="$HOME/.local/bin:$PATH"
 EOF
-}
 
-fragment_zprofile() {
-	# Emitted with this machine's real brew prefix, so it is right on both
-	# Apple Silicon (/opt/homebrew) and Intel (/usr/local).
-	printf 'eval "$(%s shellenv zsh)"\n' "$BREW_BIN"
-}
-
-FRAGMENT_MAP='zshrc:.zshrc
-zprofile:.zprofile'
-
-SEP=$(printf '\036')
-
-# Collapse stdin into one SEP-delimited line with per-line whitespace trimmed,
-# so blocks can be matched as whole-line runs with shell globbing.
-flatten() {
-	sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | tr '\n' "$SEP"
-}
-
-added=0
-
-say "Shell config"
-
-for pair in $FRAGMENT_MAP; do
-	frag_name=${pair%%:*}
-	dest=${HOME:?HOME is not set}/${pair#*:}
-
-	if [ ! -e "$dest" ] && [ "$DRY_RUN" -eq 0 ]; then
-		: > "$dest"
-		chmod 644 "$dest"
-	fi
-
-	# Bracket the haystack with SEP on both ends so the first and last lines
-	# match as whole lines too -- a file with no trailing newline flattens
-	# without a trailing SEP, which would hide its last line from the match.
-	if [ -f "$dest" ]; then
-		hay=$SEP$(flatten < "$dest")$SEP
-	else
-		hay=$SEP
-	fi
-
-	tmpdir=$(mktemp -d "${TMPDIR:-/tmp}/configinstall.XXXXXX")
-	# shellcheck disable=SC2064
-	trap "rm -rf '$tmpdir'" EXIT INT TERM
-
-	"fragment_$frag_name" > "$tmpdir/fragment"
-	awk -v d="$tmpdir" 'BEGIN { RS = ""; n = 0 } { n++; printf "%s\n", $0 > sprintf("%s/block.%04d", d, n) }' "$tmpdir/fragment"
-
-	for block in "$tmpdir"/block.*; do
-		[ -e "$block" ] || continue
-		needle=$SEP$(flatten < "$block")
-
-		case "$hay" in
-			*"$needle"*) continue ;;
-		esac
-
-		printf 'append  %s <- %s\n' "$dest" "$(head -n 1 "$block")"
-		added=$((added + 1))
-		hay="$hay${needle#"$SEP"}"
-
-		[ "$DRY_RUN" -eq 0 ] || continue
-
-		# Exactly one blank line between what is there and what we add.
-		if [ -s "$dest" ]; then
-			if [ "$(tail -c 1 "$dest" | od -An -c | tr -d ' ')" != '\n' ]; then
-				printf '\n' >> "$dest"
-			fi
-			if [ -n "$(tail -n 1 "$dest")" ]; then
-				printf '\n' >> "$dest"
-			fi
-		fi
-		cat "$block" >> "$dest"
-	done
-
-	rm -rf "$tmpdir"
-	trap - EXIT INT TERM
-done
-
-[ "$added" -ne 0 ] || printf 'already in place\n'
-
-# ------------------------------------------------------------------ wrap up --
+grep -q 'EDITOR=nvim' "$ZSHRC" || echo 'export EDITOR=nvim' >>"$ZSHRC"
+grep -q '.local/bin' "$ZSHRC" || echo 'export PATH="$HOME/.local/bin:$PATH"' >>"$ZSHRC"
+grep -q 'shellenv' "$ZPROFILE" || printf 'eval "$(%s shellenv zsh)"\n' "$BREW" >>"$ZPROFILE"
 
 say "Done"
-[ "$brew_failed" -eq 0 ] || printf 'Some brew steps failed - scroll up and re-run those by hand.\n' >&2
 
 cat <<'EOF'
 Left to do by hand:
@@ -200,5 +66,3 @@ Left to do by hand:
 
 Then: exec zsh
 EOF
-
-[ "$brew_failed" -eq 0 ] || exit 1
