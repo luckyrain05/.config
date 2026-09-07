@@ -3,8 +3,8 @@
 Personal config for macOS. This repo *is* `~/.config`.
 
 Everything under `~/.config` is tracked directly. The two shell files that live
-outside it (`~/.zshrc`, `~/.zprofile`) are stored in [`shell/`](shell/) and
-installed by a script that only ever appends — see [shell/README.md](shell/README.md).
+outside it (`~/.zshrc`, `~/.zprofile`) are embedded in [`install.sh`](install.sh),
+which appends only what a machine is missing.
 
 ---
 
@@ -14,11 +14,10 @@ installed by a script that only ever appends — see [shell/README.md](shell/REA
 
 ```sh
 xcode-select --install
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 ```
 
-Then follow the "Next steps" Homebrew prints to get `brew` on `PATH` for this
-first session (step 4 makes it permanent).
+Homebrew is installed by `install.sh` in step 3 if it is missing, so you can
+skip it here.
 
 ### 2. Clone this repo into `~/.config`
 
@@ -43,46 +42,35 @@ If `~/.config` does not exist yet, the whole step is just:
 git clone https://github.com/luckyrain05/.config.git ~/.config
 ```
 
-> Cloning over HTTPS avoids needing an SSH key on a fresh machine. Switch to SSH
-> later with `git -C ~/.config remote set-url origin git@github.com:luckyrain05/.config.git`.
+> HTTPS avoids needing an SSH key on a fresh machine. Switch later with
+> `git -C ~/.config remote set-url origin git@github.com:luckyrain05/.config.git`.
 
-### 3. Install the tools these configs drive
-
-```sh
-brew tap felixkratz/formulae
-brew tap nikitabobko/tap
-
-# CLI
-brew install neovim tmux yazi fzf ripgrep fd zoxide gh git lazygit jq node \
-             tree-sitter-cli sevenzip poppler resvg imagemagick-full ffmpeg-full borders
-
-# Apps + fonts
-brew install --cask ghostty aerospace obsidian zen spotify \
-                    font-jetbrains-mono-nerd-font font-symbols-only-nerd-font
-```
-
-`yazi` uses `poppler`, `resvg`, `imagemagick-full` and `ffmpeg-full` for file
-previews; `borders` is launched by AeroSpace. Trim the list if you do not want a
-given app.
-
-### 4. Install the shell config
+### 3. Run the installer
 
 ```sh
-sh ~/.config/shell/install.sh --dry-run   # preview
-sh ~/.config/shell/install.sh             # apply
+sh ~/.config/install.sh --dry-run   # see exactly what it would do
+sh ~/.config/install.sh             # do it
 exec zsh
 ```
 
-This appends `~/.zshrc` and `~/.zprofile` blocks the machine is missing and
-leaves anything already there untouched. Safe to re-run.
+It installs Homebrew if missing, taps `felixkratz/formulae` and
+`nikitabobko/tap`, installs the CLI tools, apps and fonts these configs drive,
+then appends the `~/.zshrc` and `~/.zprofile` blocks this machine is missing.
 
-**On an Intel Mac**, edit the Homebrew line it added to `~/.zprofile` from
-`/opt/homebrew/bin/brew` to `/usr/local/bin/brew`.
+Flags: `--dry-run` / `-n`, `--no-brew`, `--no-shell`.
 
-### 5. Per-machine identity and credentials
+**It is safe to re-run.** `brew install` skips what is present; shell files are
+created only when absent, existing lines are never edited or removed, and a
+block already present is skipped — so a machine that already has
+`export EDITOR=nvim` keeps its own copy instead of getting a second one. A
+pre-existing file gets a one-time `~/.zshrc.bak.<timestamp>` before its first
+append. The Homebrew line written to `~/.zprofile` uses the machine's real brew
+prefix, so it is correct on both Apple Silicon and Intel.
 
-These are deliberately **not** in the repo (see `.gitignore`) and must be set up
-by hand:
+### 4. Per-machine identity and credentials
+
+Deliberately **not** in the repo (see `.gitignore`); the installer prints these
+as reminders when it finishes:
 
 ```sh
 git config --global user.name  "luckyrain05"
@@ -93,41 +81,40 @@ ssh-keygen -t ed25519    # if you want SSH remotes
 gh ssh-key add ~/.ssh/id_ed25519.pub
 ```
 
-GitHub Copilot credentials (`github-copilot/`) are also ignored — sign in from
+GitHub Copilot credentials (`github-copilot/`) are ignored too — sign in from
 inside the editor.
 
-### 6. First run of each app
+### 5. First run of each app
 
 - **nvim** — just run `nvim`. `lua/config/lazy.lua` bootstraps lazy.nvim on
-  first launch and installs everything. To pin plugins to the exact versions in
-  `nvim/lazy-lock.json`, run `:Lazy restore`. LSP servers install via Mason on
+  first launch and installs everything. `:Lazy restore` pins plugins to the
+  exact versions in `nvim/lazy-lock.json`. LSP servers install via Mason on
   first use of a filetype.
 - **AeroSpace** — launch it once, then grant Accessibility permission in
   *System Settings → Privacy & Security → Accessibility*. It is configured with
   `start-at-login = true` and launches `borders` on startup.
-- **Ghostty** — picks up `ghostty/config` and the `old-world` theme
-  automatically.
+- **Ghostty** — reads `ghostty/config` and the `old-world` theme automatically.
 - **tmux** — no plugin manager; `tmux/tmux.conf` is read as-is. Prefix + `r`
   reloads it.
 
-### 7. Verify
+### 6. Verify
 
 ```sh
-which nvim tmux yazi brew   # all resolve
-nvim --version | head -1
-sh ~/.config/shell/install.sh   # should say "Everything already in place"
+which nvim tmux yazi brew        # all resolve
+sh ~/.config/install.sh          # should report 0 blocks appended
 ```
 
 ---
 
+## Editing the shell config
+
+`~/.zshrc` and `~/.zprofile` content lives in the `fragment_zshrc` and
+`fragment_zprofile` functions in `install.sh`. Keep **one blank line between
+independent statements** — that is what makes per-statement deduplication work.
+Multi-line things (a function, an `if`) must stay in one block with no blank
+lines inside. To manage another file, add a function and a `FRAGMENT_MAP` entry.
+
 ## Known gaps
 
-- `ghostty/config` runs `fastfetch` on every new window, but `fastfetch` is not
-  in the install list above and is not installed on the current machine — every
-  new Ghostty window prints `command not found`. Either `brew install fastfetch`
-  or drop the `command =` line.
-- `ghostty/config` asks for `MesloLGS Nerd Font Mono`, which is not installed;
-  the nerd font actually present is JetBrains Mono, so Ghostty silently falls
-  back. Either install `font-meslo-lg-nerd-font` or point the config at
-  `JetBrainsMono Nerd Font`.
-- `neofetch/config.conf` is tracked but `neofetch` is not installed anywhere.
+- `neofetch/config.conf` is tracked but `neofetch` is not installed and is not
+  in the install list.
