@@ -1,0 +1,3 @@
+# --- managed by ~/.config/shell/install.sh ---
+
+eval "$(/opt/homebrew/bin/brew shellenv zsh)"
